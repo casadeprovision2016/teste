@@ -93,11 +93,485 @@ class DoclingProcessor:
         if hasattr(result, 'tables'):
             for table in result.tables:
                 parsed_table = {
-                    "id": table.id,
-                    "headers": table.headers if hasattr(table, 'headers') else [],
+                    "id": getattr(table, 'id', f"table_{len(parsed['tables'])}"),
+                    "headers": getattr(table, 'headers', []),
                     "data": self._parse_table_data(table),
-                    "caption": table.caption if hasattr(table, 'caption') else None,
-                    "page": table.page_number if hasattr(table, 'page_number') else None
+                    "caption": getattr(table, 'caption', None),
+                    "page": getattr(table, 'page_number', None),
+                    "bbox": getattr(table, 'bbox', None)
+                }
+                parsed["tables"].append(parsed_table)
+        
+        # Extract metadata
+        parsed["metadata"] = {
+            "pages": getattr(result, 'page_count', 0),
+            "title": getattr(result, 'title', ''),
+            "author": getattr(result, 'author', ''),
+            "creation_date": getattr(result, 'creation_date', ''),
+            "language": getattr(result, 'language', 'pt'),
+            "word_count": len(parsed["text"].split()) if parsed["text"] else 0
+        }
+        
+        return parsed
+    
+    def _parse_table_data(self, table) -> List[List[str]]:
+        """Parse table data into rows and columns"""
+        data = []
+        
+        # Try different ways to extract table data based on Docling structure
+        if hasattr(table, 'data') and table.data:
+            for row in table.data:
+                if isinstance(row, (list, tuple)):
+                    data.append([str(cell) for cell in row])
+                else:
+                    data.append([str(row)])
+        elif hasattr(table, 'rows'):
+            for row in table.rows:
+                if hasattr(row, 'cells'):
+                    data.append([str(cell.content) if hasattr(cell, 'content') else str(cell) 
+                               for cell in row.cells])
+                else:
+                    data.append([str(cell) for cell in row])
+        
+        return data
+    
+    def _get_cache_key(self, file_path: str) -> str:
+        """Generate cache key for file"""
+        with open(file_path, 'rb') as f:
+            file_hash = hashlib.md5(f.read()).hexdigest()
+        return f"docling_{file_hash}"
+    
+    def _get_cached_result(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Get cached result if exists"""
+        cache_file = self.cache_dir / f"{cache_key}.json"
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load cache: {e}")
+        return None
+    
+    def _cache_result(self, cache_key: str, result: Dict[str, Any]):
+        """Cache processing result"""
+        cache_file = self.cache_dir / f"{cache_key}.json"
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to cache result: {e}")
+
+
+class LlamaProcessor:
+    """Processador usando Llama via Ollama"""
+    
+    def __init__(self, model_name: str = "llama3.2:3b", host: str = "http://ollama:11434"):
+        self.model_name = model_name
+        self.host = host
+        self.client = ollama.Client(host=host)
+        
+        # Text splitter for large documents
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000,
+            chunk_overlap=200,
+            length_function=len
+        )
+        
+        # Prompts templates
+        self.prompts = self._load_prompts()
+    
+    def _load_prompts(self) -> Dict[str, str]:
+        """Load prompt templates"""
+        return {
+            "extract_basic_info": """
+            Analise este texto de edital e extraia as seguintes informações em formato JSON:
+            - numero_pregao: string
+            - uasg: string  
+            - orgao: string
+            - objeto: string
+            - valor_estimado: float (apenas o número)
+            - data_abertura: string (formato ISO)
+            - modalidade: string
+            - criterio_julgamento: string
+            
+            Texto: {text}
+            
+            Responda apenas com JSON válido:
+            """,
+            
+            "analyze_risks": """
+            Analise este edital e identifique riscos de negócio. Para cada risco encontrado, forneça:
+            - tipo: técnico, legal, comercial, operacional
+            - categoria: string
+            - titulo: string
+            - descrição: string detalhada
+            - probabilidade: 0.0 a 1.0
+            - impacto: 0.0 a 1.0
+            - severidade: baixa, média, alta, crítica
+            - estratégia_mitigação: string
+            
+            Texto: {text}
+            
+            Responda em formato JSON com array "risks":
+            """,
+            
+            "identify_opportunities": """
+            Analise este edital e identifique oportunidades de negócio:
+            - tipo: volume, valor, estratégica, recorrente
+            - titulo: string
+            - descrição: string
+            - valor_estimado: float
+            - probabilidade_sucesso: 0.0 a 1.0
+            - score_oportunidade: 0 a 100
+            - prioridade: baixa, média, alta, crítica
+            - vantagem_competitiva: string
+            
+            Texto: {text}
+            
+            Responda em formato JSON com array "opportunities":
+            """,
+            
+            "analyze_tables": """
+            Analise estas tabelas extraídas de edital e classifique cada uma:
+            - é uma tabela de produtos/serviços? sim/não
+            - categoria: produtos, serviços, cronograma, orçamento, outros
+            - complexidade: baixa, média, alta
+            - completude: porcentagem de campos preenchidos
+            
+            Tabelas: {tables}
+            
+            Responda em formato JSON com array "table_analysis":
+            """
+        }
+    
+    async def extract_basic_info(self, text: str) -> Dict[str, Any]:
+        """Extract basic edital information"""
+        try:
+            # Truncate text if too long
+            if len(text) > 8000:
+                text = text[:8000] + "..."
+            
+            response = self.client.generate(
+                model=self.model_name,
+                prompt=self.prompts["extract_basic_info"].format(text=text),
+                options={
+                    "temperature": 0.1,
+                    "top_p": 0.9,
+                    "max_tokens": 1000
+                }
+            )
+            
+            # Parse JSON response
+            result = self._parse_json_response(response['response'])
+            
+            # Validate and clean result
+            return self._validate_basic_info(result)
+            
+        except Exception as e:
+            logger.error(f"Error extracting basic info: {str(e)}")
+            return self._get_default_basic_info()
+    
+    async def analyze_risks(self, text: str) -> List[Dict[str, Any]]:
+        """Analyze risks in the edital"""
+        try:
+            # Process in chunks if text is too long
+            chunks = self.text_splitter.split_text(text)
+            all_risks = []
+            
+            for chunk in chunks[:3]:  # Limit to first 3 chunks
+                response = self.client.generate(
+                    model=self.model_name,
+                    prompt=self.prompts["analyze_risks"].format(text=chunk),
+                    options={
+                        "temperature": 0.2,
+                        "max_tokens": 1500
+                    }
+                )
+                
+                result = self._parse_json_response(response['response'])
+                if result and "risks" in result:
+                    all_risks.extend(result["risks"])
+            
+            # Deduplicate and score risks
+            return self._process_risks(all_risks)
+            
+        except Exception as e:
+            logger.error(f"Error analyzing risks: {str(e)}")
+            return []
+    
+    async def identify_opportunities(self, text: str, structured_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Identify business opportunities"""
+        try:
+            # Combine text with structured data context
+            context = f"Texto: {text[:4000]}\n\nDados estruturados: {json.dumps(structured_data, indent=2)[:2000]}"
+            
+            response = self.client.generate(
+                model=self.model_name,
+                prompt=self.prompts["identify_opportunities"].format(text=context),
+                options={
+                    "temperature": 0.3,
+                    "max_tokens": 1200
+                }
+            )
+            
+            result = self._parse_json_response(response['response'])
+            if result and "opportunities" in result:
+                return self._process_opportunities(result["opportunities"])
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error identifying opportunities: {str(e)}")
+            return []
+    
+    async def analyze_tables(self, tables: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Analyze extracted tables"""
+        try:
+            # Prepare table data for analysis
+            table_summary = []
+            for i, table in enumerate(tables[:5]):  # Limit to first 5 tables
+                summary = {
+                    "id": table.get("id", f"table_{i}"),
+                    "headers": table.get("headers", [])[:10],  # First 10 headers
+                    "row_count": len(table.get("data", [])),
+                    "sample_data": table.get("data", [])[:3]  # First 3 rows
+                }
+                table_summary.append(summary)
+            
+            response = self.client.generate(
+                model=self.model_name,
+                prompt=self.prompts["analyze_tables"].format(tables=json.dumps(table_summary, indent=2)),
+                options={
+                    "temperature": 0.1,
+                    "max_tokens": 800
+                }
+            )
+            
+            result = self._parse_json_response(response['response'])
+            if result and "table_analysis" in result:
+                return result["table_analysis"]
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error analyzing tables: {str(e)}")
+            return []
+    
+    def _parse_json_response(self, response: str) -> Optional[Dict[str, Any]]:
+        """Parse JSON from LLM response"""
+        try:
+            # Clean response - remove code blocks and extra text
+            response = response.strip()
+            
+            # Find JSON content
+            start_idx = response.find('{')
+            end_idx = response.rfind('}') + 1
+            
+            if start_idx >= 0 and end_idx > start_idx:
+                json_str = response[start_idx:end_idx]
+                return json.loads(json_str)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error parsing JSON response: {str(e)}")
+            return None
+    
+    def _validate_basic_info(self, info: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and clean basic info"""
+        defaults = self._get_default_basic_info()
+        
+        # Ensure all required fields exist
+        for key, default_value in defaults.items():
+            if key not in info or not info[key]:
+                info[key] = default_value
+        
+        # Clean and validate specific fields
+        if "valor_estimado" in info:
+            try:
+                # Extract number from string if needed
+                value = str(info["valor_estimado"])
+                value = re.sub(r'[^\d.,]', '', value)
+                value = value.replace(',', '.')
+                info["valor_estimado"] = float(value) if value else 0.0
+            except:
+                info["valor_estimado"] = 0.0
+        
+        return info
+    
+    def _get_default_basic_info(self) -> Dict[str, Any]:
+        """Get default basic info structure"""
+        return {
+            "numero_pregao": "Não identificado",
+            "uasg": "Não identificado",
+            "orgao": "Não identificado", 
+            "objeto": "Não identificado",
+            "valor_estimado": 0.0,
+            "data_abertura": None,
+            "modalidade": "Não identificado",
+            "criterio_julgamento": "Não identificado"
+        }
+    
+    def _process_risks(self, risks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Process and deduplicate risks"""
+        processed = []
+        seen_titles = set()
+        
+        for risk in risks:
+            title = risk.get("titulo", "").lower()
+            if title and title not in seen_titles:
+                # Calculate risk score
+                prob = risk.get("probabilidade", 0.5)
+                impact = risk.get("impacto", 0.5)
+                risk["risk_score"] = prob * impact
+                
+                # Determine severity
+                if risk["risk_score"] >= 0.8:
+                    risk["severidade"] = "crítica"
+                elif risk["risk_score"] >= 0.6:
+                    risk["severidade"] = "alta"
+                elif risk["risk_score"] >= 0.3:
+                    risk["severidade"] = "média"
+                else:
+                    risk["severidade"] = "baixa"
+                
+                processed.append(risk)
+                seen_titles.add(title)
+        
+        # Sort by risk score
+        return sorted(processed, key=lambda x: x.get("risk_score", 0), reverse=True)
+    
+    def _process_opportunities(self, opportunities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Process opportunities"""
+        processed = []
+        
+        for opp in opportunities:
+            # Calculate opportunity score if not provided
+            if "score_oportunidade" not in opp:
+                prob = opp.get("probabilidade_sucesso", 0.5)
+                value = opp.get("valor_estimado", 0)
+                
+                # Simple scoring algorithm
+                value_score = min(value / 1000000, 1.0) * 40  # Max 40 points for value
+                prob_score = prob * 60  # Max 60 points for probability
+                
+                opp["score_oportunidade"] = value_score + prob_score
+            
+            # Set priority based on score
+            score = opp.get("score_oportunidade", 0)
+            if score >= 80:
+                opp["prioridade"] = "crítica"
+            elif score >= 60:
+                opp["prioridade"] = "alta"
+            elif score >= 40:
+                opp["prioridade"] = "média"
+            else:
+                opp["prioridade"] = "baixa"
+            
+            processed.append(opp)
+        
+        # Sort by score
+        return sorted(processed, key=lambda x: x.get("score_oportunidade", 0), reverse=True)
+
+
+class AIEngine:
+    """Main AI Engine integrating Docling and Llama"""
+    
+    def __init__(self):
+        from app.core.config import settings
+        
+        self.docling = DoclingProcessor()
+        self.llama = LlamaProcessor(
+            model_name=settings.MODEL_NAME,
+            host=settings.OLLAMA_HOST
+        )
+        
+        self.initialized = False
+    
+    async def initialize_models(self):
+        """Initialize AI models"""
+        try:
+            logger.info("Initializing AI models...")
+            
+            # Check Ollama connection
+            models = self.llama.client.list()
+            logger.info(f"Available models: {[m['name'] for m in models['models']]}")
+            
+            # Pull model if not available
+            model_names = [m['name'] for m in models['models']]
+            if self.llama.model_name not in model_names:
+                logger.info(f"Pulling model {self.llama.model_name}...")
+                self.llama.client.pull(self.llama.model_name)
+            
+            self.initialized = True
+            logger.info("AI models initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize AI models: {str(e)}")
+            raise
+    
+    async def process_document(self, file_path: str) -> Dict[str, Any]:
+        """Process document with both Docling and Llama"""
+        if not self.initialized:
+            await self.initialize_models()
+        
+        logger.info(f"Processing document: {file_path}")
+        
+        # Stage 1: Docling processing
+        docling_result = await self.docling.process_document(file_path)
+        
+        # Stage 2: Llama analysis
+        text = docling_result["text"]
+        tables = docling_result["tables"]
+        
+        # Extract basic information
+        basic_info = await self.llama.extract_basic_info(text)
+        
+        # Analyze risks
+        risks = await self.llama.analyze_risks(text)
+        
+        # Identify opportunities  
+        opportunities = await self.llama.identify_opportunities(text, basic_info)
+        
+        # Analyze tables
+        table_analysis = await self.llama.analyze_tables(tables)
+        
+        # Combine results
+        result = {
+            "docling_result": docling_result,
+            "basic_info": basic_info,
+            "risks": risks,
+            "opportunities": opportunities, 
+            "table_analysis": table_analysis,
+            "processing_metadata": {
+                "timestamp": datetime.utcnow().isoformat(),
+                "model_used": self.llama.model_name,
+                "text_length": len(text),
+                "table_count": len(tables),
+                "risk_count": len(risks),
+                "opportunity_count": len(opportunities)
+            }
+        }
+        
+        logger.info(f"Document processing completed: {len(risks)} risks, {len(opportunities)} opportunities")
+        return result
+    
+    # Legacy methods for compatibility with existing worker code
+    async def analyze_document(self, text: str, tables: List[Dict], metadata: Dict) -> Dict[str, Any]:
+        """Legacy method for compatibility"""
+        basic_info = await self.llama.extract_basic_info(text)
+        return {
+            "basic_info": basic_info,
+            "insights": {
+                "text_length": len(text),
+                "table_count": len(tables),
+                "metadata": metadata
+            }
+        }
+    
+    async def extract_structured_data(self, text: str, ai_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Legacy method for compatibility"""
+        return ai_analysis.get("basic_info", {})
                 }
                 parsed["tables"].append(parsed_table)
         
