@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arquitetura de Processamento de Editais</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #1a202c;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 24px;
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
+            padding: 40px;
+            backdrop-filter: blur(20px);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #1a365d;
+            margin-bottom: 10px;
+            font-size: 2.8em;
+            font-weight: 800;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #64748b;
+            margin-bottom: 40px;
+            font-size: 1.2em;
+            font-weight: 500;
+        }
+        
+        .flow-diagram {
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .flow-title {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .flow-steps {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        .flow-step {
+            flex: 1;
+            min-width: 180px;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .flow-step:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .flow-step-number {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        
+        .flow-step-icon {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .flow-step-title {
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 5px;
+        }
+        
+        .flow-step-desc {
+            font-size: 0.85em;
+            color: #64748b;
+        }
+        
+        .flow-arrow {
+            color: #cbd5e1;
+            font-size: 2em;
+            animation: arrowPulse 2s ease-in-out infinite;
+        }
+        
+        .architecture-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .architecture-section {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .architecture-section:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid;
+        }
+        
+        .section-icon {
+            font-size: 1.8em;
+        }
+        
+        .section-title {
+            font-size: 1.3em;
+            font-weight: 700;
+        }
+        
+        .api-section .section-header {
+            border-color: #10b981;
+            color: #059669;
+        }
+        
+        .queue-section .section-header {
+            border-color: #f59e0b;
+            color: #d97706;
+        }
+        
+        .ai-section .section-header {
+            border-color: #8b5cf6;
+            color: #7c3aed;
+        }
+        
+        .storage-section .section-header {
+            border-color: #ef4444;
+            color: #dc2626;
+        }
+        
+        .component-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .component-item {
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            border-left: 4px solid;
+            border-radius: 8px;
+            padding: 15px;
+            transition: all 0.3s ease;
+        }
+        
+        .component-item:hover {
+            background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+            transform: translateX(5px);
+        }
+        
+        .api-section .component-item {
+            border-color: #10b981;
+        }
+        
+        .queue-section .component-item {
+            border-color: #f59e0b;
+        }
+        
+        .ai-section .component-item {
+            border-color: #8b5cf6;
+        }
+        
+        .storage-section .component-item {
+            border-color: #ef4444;
+        }
+        
+        .component-name {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .component-details {
+            color: #64748b;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        
+        .tech-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        
+        .tech-tag {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 500;
+        }
+        
+        .docker-compose-section {
+            background: linear-gradient(135deg, #1e3a8a, #1e40af);
+            color: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .docker-compose-title {
+            font-size: 1.5em;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .docker-services {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        
+        .docker-service {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .docker-service:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(1.05);
+        }
+        
+        .service-name {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .service-details {
+            font-size: 0.9em;
+            opacity: 0.9;
+            line-height: 1.5;
+        }
+        
+        .metrics-dashboard {
+            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .metrics-title {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #0369a1;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .metric-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        
+        .metric-value {
+            font-size: 2.2em;
+            font-weight: 800;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .metric-label {
+            color: #64748b;
+            font-size: 0.9em;
+            margin-top: 5px;
+            font-weight: 500;
+        }
+        
+        .folder-structure {
+            background: #1e293b;
+            color: #10b981;
+            border-radius: 12px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        
+        .folder-structure pre {
+            margin: 0;
+            white-space: pre-wrap;
+        }
+        
+        .highlight-box {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border-left: 5px solid #f59e0b;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .highlight-box h3 {
+            color: #92400e;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+        
+        .highlight-box ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .highlight-box li {
+            padding: 8px 0;
+            color: #451a03;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        
+        .highlight-box li:before {
+            content: "✓";
+            color: #059669;
+            font-weight: bold;
+            font-size: 1.2em;
+            flex-shrink: 0;
+        }
+        
+        @keyframes arrowPulse {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(10px); }
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: statusPulse 2s ease-in-out infinite;
+        }
+        
+        .status-active {
+            background: #10b981;
+        }
+        
+        .status-processing {
+            background: #f59e0b;
+        }
+        
+        .status-waiting {
+            background: #3b82f6;
+        }
+        
+        @keyframes statusPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.2); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📋 Sistema de Processamento de Editais</h1>
+        <p class="subtitle">Arquitetura Monolítica com Processamento Assíncrono e IA Local</p>
+        
+        <!-- Flow Diagram -->
+        <div class="flow-diagram">
+            <div class="flow-title">
+                <span>🔄</span> Fluxo de Processamento Assíncrono
+            </div>
+            <div class="flow-steps">
+                <div class="flow-step">
+                    <div class="flow-step-number">1</div>
+                    <div class="flow-step-icon">📥</div>
+                    <div class="flow-step-title">Recebimento</div>
+                    <div class="flow-step-desc">API recebe edital PDF</div>
+                </div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step">
+                    <div class="flow-step-number">2</div>
+                    <div class="flow-step-icon">📝</div>
+                    <div class="flow-step-title">Enfileiramento</div>
+                    <div class="flow-step-desc">Task adicionada na fila</div>
+                </div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step">
+                    <div class="flow-step-number">3</div>
+                    <div class="flow-step-icon">🤖</div>
+                    <div class="flow-step-title">Processamento IA</div>
+                    <div class="flow-step-desc">Extração e análise</div>
+                </div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step">
+                    <div class="flow-step-number">4</div>
+                    <div class="flow-step-icon">💾</div>
+                    <div class="flow-step-title">Persistência</div>
+                    <div class="flow-step-desc">Salva resultados</div>
+                </div>
+                <span class="flow-arrow">→</span>
+                <div class="flow-step">
+                    <div class="flow-step-number">5</div>
+                    <div class="flow-step-icon">✅</div>
+                    <div class="flow-step-title">Callback</div>
+                    <div class="flow-step-desc">Notifica conclusão</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Architecture Grid -->
+        <div class="architecture-grid">
+            <!-- API Section -->
+            <div class="architecture-section api-section">
+                <div class="section-header">
+                    <span class="section-icon">📡</span>
+                    <span class="section-title">API & Integração</span>
+                </div>
+                <div class="component-list">
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>🚀</span> FastAPI Server
+                        </div>
+                        <div class="component-details">
+                            Servidor principal com endpoints RESTful para recepção de editais e consulta de status
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Uvicorn</span>
+                            <span class="tech-tag">Async/Await</span>
+                            <span class="tech-tag">WebSockets</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>🔐</span> Autenticação JWT
+                        </div>
+                        <div class="component-details">
+                            Sistema de tokens para autenticação segura com refresh tokens
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">python-jose</span>
+                            <span class="tech-tag">passlib</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>📊</span> Endpoints Principais
+                        </div>
+                        <div class="component-details">
+                            POST /editais/upload | GET /editais/{id}/status | GET /editais/{id}/resultado
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Pydantic</span>
+                            <span class="tech-tag">OpenAPI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Queue Section -->
+            <div class="architecture-section queue-section">
+                <div class="section-header">
+                    <span class="section-icon">⚡</span>
+                    <span class="section-title">Sistema de Filas</span>
+                </div>
+                <div class="component-list">
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>🔄</span> Celery Workers
+                        </div>
+                        <div class="component-details">
+                            Workers assíncronos para processamento paralelo de até 4 editais simultaneamente
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Celery</span>
+                            <span class="tech-tag">Kombu</span>
+                            <span class="tech-tag">Billiard</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>📮</span> Redis Queue
+                        </div>
+                        <div class="component-details">
+                            Message broker para gerenciamento de filas com persistência
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Redis</span>
+                            <span class="tech-tag">Redis-py</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>📈</span> Flower Monitor
+                        </div>
+                        <div class="component-details">
+                            Dashboard para monitoramento em tempo real das filas e workers
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Flower</span>
+                            <span class="tech-tag">WebUI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- AI Section -->
+            <div class="architecture-section ai-section">
+                <div class="section-header">
+                    <span class="section-icon">🤖</span>
+                    <span class="section-title">Processamento IA</span>
+                </div>
+                <div class="component-list">
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>🦙</span> Llama 3.2 (3B params)
+                        </div>
+                        <div class="component-details">
+                            Modelo otimizado para análise semântica e extração de informações contextuais
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Ollama</span>
+                            <span class="tech-tag">GGUF</span>
+                            <span class="tech-tag">4-bit quant</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>📄</span> Docling Engine
+                        </div>
+                        <div class="component-details">
+                            Motor especializado em extração de estruturas complexas de PDFs
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Document AI</span>
+                            <span class="tech-tag">OCR</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>📊</span> Table Extractor
+                        </div>
+                        <div class="component-details">
+                            Pipeline especializado para identificação e extração de tabelas de produtos
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Camelot</span>
+                            <span class="tech-tag">Tabula</span>
+                            <span class="tech-tag">pandas</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Storage Section -->
+            <div class="architecture-section storage-section">
+                <div class="section-header">
+                    <span class="section-icon">💾</span>
+                    <span class="section-title">Armazenamento</span>
+                </div>
+                <div class="component-list">
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>🗄️</span> SQLite Database
+                        </div>
+                        <div class="component-details">
+                            Banco de dados para metadados, status de processamento e resultados estruturados
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">SQLAlchemy</span>
+                            <span class="tech-tag">Alembic</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>📁</span> Sistema de Arquivos
+                        </div>
+                        <div class="component-details">
+                            Organização hierárquica: {BASE}/{ANO}/{UASG}/{PREGAO}/{arquivo}.pdf
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">Volume Docker</span>
+                            <span class="tech-tag">Path Manager</span>
+                        </div>
+                    </div>
+                    <div class="component-item">
+                        <div class="component-name">
+                            <span>⚡</span> Cache Redis
+                        </div>
+                        <div class="component-details">
+                            Cache de inferências IA e resultados temporários para otimização
+                        </div>
+                        <div class="tech-tags">
+                            <span class="tech-tag">TTL 24h</span>
+                            <span class="tech-tag">LRU</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Docker Compose Section -->
+        <div class="docker-compose-section">
+            <div class="docker-compose-title">
+                <span>🐳</span> Docker Compose Services
+            </div>
+            <div class="docker-services">
+                <div class="docker-service">
+                    <div class="service-name">📡 app-api</div>
+                    <div class="service-details">
+                        FastAPI server<br>
+                        Porta: 8000<br>
+                        4 workers Uvicorn
+                    </div>
+                </div>
+                <div class="docker-service">
+                    <div class="service-name">⚡ app-worker</div>
+                    <div class="service-details">
+                        Celery workers<br>
+                        Concorrência: 4<br>
+                        Auto-scale: 2-8
+                    </div>
+                </div>
+                <div class="docker-service">
+                    <div class="service-name">📮 redis</div>
+                    <div class="service-details">
+                        Redis 7-alpine<br>
+                        Porta: 6379<br>
+                        Persistência AOF
+                    </div>
+                </div>
+                <div class="docker-service">
+                    <div class="service-name">🌸 flower</div>
+                    <div class="service-details">
+                        Monitor dashboard<br>
+                        Porta: 5555<br>
+                        Real-time metrics
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Folder Structure -->
+        <div class="folder-structure">
+            <pre>📁 Estrutura de Diretórios Organizados:
+
+/storage/
+├── editais/
+│   ├── 2025/
+│   │   ├── 986531/           # UASG
+│   │   │   ├── PE-001-2025/  # Número do Pregão
+│   │   │   │   ├── edital_completo.pdf
+│   │   │   │   ├── anexo_termo_referencia.pdf
+│   │   │   │   └── metadata.json
+│   │   │   └── PE-002-2025/
+│   │   └── 158154/
+│   └── 2024/
+├── processados/
+│   └── [hash]/resultado.json
+└── temp/
+    └── cache/</pre>
+        </div>
+        
+        <!-- Metrics Dashboard -->
+        <div class="metrics-dashboard">
+            <div class="metrics-title">
+                <span>📊</span> Métricas de Performance Esperadas
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">50</div>
+                    <div class="metric-label">Editais/dia</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">~8min</div>
+                    <div class="metric-label">Tempo médio/edital</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">4</div>
+                    <div class="metric-label">Workers paralelos</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">3.2B</div>
+                    <div class="metric-label">Modelo Llama</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">16GB</div>
+                    <div class="metric-label">RAM recomendada</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">95%+</div>
+                    <div class="metric-label">Precisão extração</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Key Features -->
+        <div class="highlight-box">
+            <h3>🎯 Características Otimizadas para seu Caso de Uso</h3>
+            <ul>
+                <li><span class="status-indicator status-active"></span>Processamento assíncrono com Celery para não bloquear a API</li>
+                <li><span class="status-indicator status-processing"></span>Modelo Llama 3.2 3B quantizado para rodar eficientemente em container</li>
+                <li><span class="status-indicator status-waiting"></span>Organização automática de arquivos seguindo padrão {ANO}/{UASG}/{PREGAO}</li>
+                <li><span class="status-indicator status-active"></span>Sistema de callbacks para notificar conclusão do processamento</li>
+                <li><span class="status-indicator status-processing"></span>Cache inteligente de inferências para otimizar processamentos similares</li>
+                <li><span class="status-indicator status-waiting"></span>Dashboard Flower para monitoramento em tempo real das filas</li>
+                <li><span class="status-indicator status-active"></span>Auto-scaling de workers baseado no tamanho da fila</li>
+                <li><span class="status-indicator status-processing"></span>Retry automático com backoff exponencial em caso de falhas</li>
+            </ul>
+        </div>
+        
+        <!-- API Integration Example -->
+        <div class="highlight-box" style="background: linear-gradient(135deg, #dbeafe, #bfdbfe); border-color: #3b82f6;">
+            <h3>🔗 Exemplo de Integração com API Externa</h3>
+            <ul>
+                <li><strong>POST /api/v1/editais/processar</strong> - Recebe PDF e metadados (UASG, ano, número pregão)</li>
+                <li><strong>Response:</strong> { "task_id": "uuid", "status": "queued" }</li>
+                <li><strong>GET /api/v1/editais/status/{task_id}</strong> - Consulta status do processamento</li>
+                <li><strong>GET /api/v1/editais/resultado/{task_id}</strong> - Obtém resultado estruturado</li>
+                <li><strong>Webhook Callback:</strong> POST para URL configurada quando processamento concluir</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

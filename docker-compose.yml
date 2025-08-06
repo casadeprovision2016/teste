@@ -1,0 +1,182 @@
+version: '3.8'
+
+services:
+  # Redis - Message Broker e Cache
+  redis:
+    image: redis:7-alpine
+    container_name: edital-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --appendfsync everysec
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API FastAPI Principal
+  app-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edital-api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:////app/data/editais.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      - STORAGE_BASE_PATH=/app/storage/editais
+      - PROCESSED_PATH=/app/storage/processados
+      - TEMP_PATH=/app/storage/temp
+      - MODEL_NAME=llama3.2:3b
+      - MODEL_MAX_TOKENS=4096
+      - LOG_LEVEL=INFO
+      - WORKERS=4
+    volumes:
+      - ./storage:/app/storage
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+    depends_on:
+      - redis
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --loop asyncio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker para Processamento Assíncrono
+  app-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edital-worker
+    restart: always
+    environment:
+      - DATABASE_URL=sqlite:////app/data/editais.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - STORAGE_BASE_PATH=/app/storage/editais
+      - PROCESSED_PATH=/app/storage/processados
+      - TEMP_PATH=/app/storage/temp
+      - MODEL_NAME=llama3.2:3b
+      - MODEL_MAX_TOKENS=4096
+      - OLLAMA_HOST=http://ollama:11434
+      - LOG_LEVEL=INFO
+      - C_FORCE_ROOT=true
+    volumes:
+      - ./storage:/app/storage
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+    depends_on:
+      - redis
+      - ollama
+    command: celery -A app.worker worker --loglevel=info --concurrency=4 --max-tasks-per-child=10
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+
+  # Celery Beat para Tarefas Agendadas (opcional)
+  app-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edital-beat
+    restart: always
+    environment:
+      - DATABASE_URL=sqlite:////app/data/editais.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+    command: celery -A app.worker beat --loglevel=info
+
+  # Flower - Dashboard de Monitoramento
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edital-flower
+    restart: always
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - FLOWER_PORT=5555
+      - FLOWER_BASIC_AUTH=admin:${FLOWER_PASSWORD:-admin123}
+    depends_on:
+      - redis
+      - app-worker
+    command: celery -A app.worker flower --port=5555 --basic_auth=admin:${FLOWER_PASSWORD:-admin123}
+
+  # Ollama para rodar modelos LLM localmente
+  ollama:
+    image: ollama/ollama:latest
+    container_name: edital-ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./models:/models
+    environment:
+      - OLLAMA_MODELS=/models
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+        reservations:
+          memory: 8G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]  # Opcional: se tiver GPU NVIDIA
+    command: serve
+
+  # Nginx (Opcional - para produção)
+  nginx:
+    image: nginx:alpine
+    container_name: edital-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./storage/static:/usr/share/nginx/html/static
+    depends_on:
+      - app-api
+    profiles:
+      - production
+
+volumes:
+  redis_data:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  default:
+    name: edital-network
+    driver: bridge
