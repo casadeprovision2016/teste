@@ -261,8 +261,8 @@ class ProcessingLog(Base):
     error_message = Column(Text)
     error_traceback = Column(Text)
     
-    # Metadata
-    metadata = Column(JSON)
+    # Processing metadata
+    processing_metadata = Column(JSON)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

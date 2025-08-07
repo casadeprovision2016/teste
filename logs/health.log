@@ -1,0 +1,7 @@
+2025-08-07 08:42:52 🚀 Starting health check...
+2025-08-07 08:42:52 ✅ Container edital-api is running
+2025-08-07 08:42:52 ✅ Container edital-worker is running
+2025-08-07 08:42:52 ✅ Container edital-redis is running
+2025-08-07 08:42:52 ✅ Container edital-ollama is running
+2025-08-07 08:42:52 ✅ Container edital-flower is running
+2025-08-07 08:42:52 ❌ FastAPI is unhealthy

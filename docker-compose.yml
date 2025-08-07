@@ -25,7 +25,7 @@ services:
     container_name: edital-api
     restart: always
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - DATABASE_URL=sqlite:////app/data/editais.db
       - REDIS_URL=redis://redis:6379/0

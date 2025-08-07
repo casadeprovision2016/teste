@@ -12,9 +12,9 @@ import traceback
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.services.pdf_processor import PDFProcessor
-from app.services.ai_engine import AIEngine
-from app.services.table_extractor import TableExtractor
-from app.services.risk_analyzer import RiskAnalyzer
+from app.services.ai_engine_basic import AIEngine
+from app.services.table_extractor_basic import TableExtractor
+from app.services.risk_analyzer_basic import RiskAnalyzer
 from app.utils.callback_handler import CallbackHandler
 from app.models import Edital
 
