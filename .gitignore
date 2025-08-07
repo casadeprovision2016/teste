@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+
+# SQLite database
+/app/data/*.db
+
+# Docker
+*.log
+logs/
+*.pid
+
+# Modelos grandes
+models/blobs/
+
+# VSCode
+.vscode/
+
+# Backup scripts e arquivos temporários
+*.bak
+*.swp
+*.tmp
+
+# Outros
+.DS_Store
